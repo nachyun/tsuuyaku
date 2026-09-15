@@ -6,13 +6,16 @@
     <title>실전 통역 훈련 시스템</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f8; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 500px; }
+        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 500px; box-sizing: border-box; }
         h2 { text-align: center; color: #333; margin-top: 0; }
-        select, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; }
-        button { background-color: #007AFF; color: white; border: none; font-weight: bold; cursor: pointer; }
+        select, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
+        button { background-color: #007AFF; color: white; border: none; font-weight: bold; cursor: pointer; transition: background-color 0.2s; }
         button:active { background-color: #0056b3; }
-        .scenario-box { background: #eef2f5; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 18px; font-weight: bold; text-align: center; word-break: keep-all; }
-        .feedback-box { background: #fffde7; padding: 15px; border-radius: 8px; border: 1px solid #fff59d; margin-top: 15px; display: none; font-size: 14px; line-height: 1.5; }
+        .api-section { background: #ffebee; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffcdd2; }
+        .api-section input { width: 100%; padding: 10px; margin-top: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .api-section button { background-color: #d32f2f; margin-top: 10px; }
+        .scenario-box { background: #eef2f5; padding: 20px; border-radius: 8px; margin: 15px 0; font-size: 18px; font-weight: bold; text-align: center; word-break: keep-all; line-height: 1.4; }
+        .feedback-box { background: #fffde7; padding: 15px; border-radius: 8px; border: 1px solid #fff59d; margin-top: 15px; display: none; font-size: 14.5px; line-height: 1.6; }
         .recording { background-color: #ff3b30 !important; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
     </style>
@@ -21,45 +24,67 @@
 
 <div class="container">
     <h2>실전 통역 훈련</h2>
+
+    <!-- API 키 입력 영역 (기기에만 저장) -->
+    <div id="apiKeySection" class="api-section">
+        <label for="apiKeyInput" style="font-size: 14px; font-weight: bold; color: #b71c1c;">🔑 Gemini API 키 입력 (최초 1회):</label>
+        <input type="password" id="apiKeyInput" placeholder="발급받은 API 키를 입력하세요">
+        <button onclick="saveApiKey()">기기에 저장하기</button>
+        <p style="font-size: 11.5px; color: #666; margin: 8px 0 0 0;">* 입력하신 키는 서버에 전송되지 않으며 현재 기기(브라우저)에만 안전하게 보관됩니다.</p>
+    </div>
     
     <select id="scenarioType" onchange="loadScenario()">
-        <option value="meeting">첫 만남 및 인사 (아이스브레이킹)</option>
-        <option value="welfare">사회복지 시설 및 프로그램 소개</option>
+        <option value="meeting">첫 만남 및 일정 안내 (아이스브레이킹)</option>
+        <option value="welfare">기관 소개 및 사회복지 현황 교류</option>
     </select>
 
     <div class="scenario-box" id="promptText">상황을 선택해주세요.</div>
     
-    <button onclick="playAudio()">🔊 상황 듣기</button>
-    <button id="micBtn" onclick="startRecognition()">🎤 통역하기 (마이크)</button>
+    <button onclick="playAudio()">🔊 상황 듣기 (원어민 음성)</button>
+    <button id="micBtn" onclick="startRecognition()">🎤 통역하기 (마이크 누르기)</button>
 
     <div class="feedback-box" id="feedbackArea">
-        <strong>내 통역:</strong> <span id="mySpeech"></span><br><br>
-        <strong>AI 교정 및 피드백:</strong><br>
-        <div id="aiFeedback">평가 중입니다...</div>
+        <strong style="color:#1976d2;">내 통역:</strong> <span id="mySpeech"></span><br><br>
+        <strong style="color:#d32f2f;">AI 교정 및 피드백:</strong><br>
+        <div id="aiFeedback" style="margin-top: 8px;">평가 중입니다...</div>
     </div>
 </div>
 
 <script>
-    // ========== 1. API 키 설정 (필수) ==========
-    // 구글 AI Studio에서 무료로 발급받은 Gemini API 키를 아래에 넣으세요.
-    const API_KEY = '여기에_API_키를_입력하세요'; 
+    // ========== 1. API 키 로컬 스토리지 관리 ==========
+    function saveApiKey() {
+        const key = document.getElementById('apiKeyInput').value.trim();
+        if(key) {
+            localStorage.setItem('gemini_api_key', key);
+            alert('API 키가 기기에 안전하게 저장되었습니다!');
+            document.getElementById('apiKeySection').style.display = 'none';
+        } else {
+            alert('API 키를 입력해주세요.');
+        }
+    }
 
-    // ========== 2. 시나리오 데이터 ==========
+    function checkApiKey() {
+        if(localStorage.getItem('gemini_api_key')) {
+            document.getElementById('apiKeySection').style.display = 'none';
+        }
+    }
+
+    // ========== 2. 맞춤형 실전 시나리오 데이터 ==========
     const scenarios = {
         meeting: [
-            { ko: "먼 길 오시느라 고생 많으셨습니다. 타카스카이 방문단 여러분을 진심으로 환영합니다.", lang: "ko" },
-            { ko: "はじめまして。本日はお忙しい中、お時間をいただきありがとうございます。", lang: "ja" },
-            { ko: "호텔까지는 전용 차량으로 이동할 예정입니다. 약 40분 정도 소요됩니다.", lang: "ko" }
+            { ko: "먼 길 오시느라 고생 많으셨습니다. 타카스카이(高須会) 방문단 여러분을 진심으로 환영합니다.", lang: "ko" },
+            { ko: "はじめまして。本日はお忙しい中、このような交流の場を設けていただきありがとうございます。", lang: "ja" },
+            { ko: "일정표를 확인해 주시기 바랍니다. 내일 오전에는 시설 라운딩이 예정되어 있습니다.", lang: "ko" }
         ],
         welfare: [
-            { ko: "저희는 사회복지법인 미선 산하의 늘품발달장애인평생교육센터입니다.", lang: "ko" },
-            { ko: "최근에는 발달장애인 가족을 위한 가족사진관 프로젝트를 성공적으로 마쳤습니다.", lang: "ko" },
-            { ko: "日本の発達障害者に対する就労支援の現状について教えていただけますか。", lang: "ja" }
+            { ko: "저희는 사회복지법인 미선 산하의 남동구늘품발달장애인평생교육센터입니다.", lang: "ko" },
+            { ko: "최근 하계 사회복지사 현장실습과 발달장애인 가족사진관 프로젝트를 성공적으로 마쳤습니다.", lang: "ko" },
+            { ko: "日本の発達障害者に対する支援政策や、地域社会との連携について教えていただけますか。", lang: "ja" }
         ]
     };
 
     let currentPrompt = "";
-    let currentTargetLang = ""; // 통역해야 할 언어 (한국어가 나오면 일본어로, 일본어가 나오면 한국어로)
+    let currentTargetLang = ""; // 통역해야 할 대상 언어
 
     function loadScenario() {
         const type = document.getElementById('scenarioType').value;
@@ -67,6 +92,7 @@
         const randomItem = list[Math.floor(Math.random() * list.length)];
         
         currentPrompt = randomItem.ko;
+        // 한국어 텍스트면 일본어로 통역, 일본어 텍스트면 한국어로 통역
         currentTargetLang = randomItem.lang === 'ko' ? 'ja-JP' : 'ko-KR';
         
         document.getElementById('promptText').innerText = currentPrompt;
@@ -76,76 +102,96 @@
     // ========== 3. 음성 출력 (TTS) ==========
     function playAudio() {
         const utterance = new SpeechSynthesisUtterance(currentPrompt);
-        utterance.lang = currentTargetLang === 'ja-JP' ? 'ko-KR' : 'ja-JP'; // 원문 언어
-        utterance.rate = 1.0;
+        utterance.lang = currentTargetLang === 'ja-JP' ? 'ko-KR' : 'ja-JP'; // 화면에 표시된 텍스트 언어로 읽기
+        utterance.rate = 0.9; // 약간 천천히 읽어주어 또렷하게 들리도록 설정
         window.speechSynthesis.speak(utterance);
     }
 
     // ========== 4. 음성 인식 (STT) ==========
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    recognition.interimResults = false;
+    let recognition;
+    
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.interimResults = false;
+
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            resetMicButton();
+            
+            document.getElementById('feedbackArea').style.display = 'block';
+            document.getElementById('mySpeech').innerText = transcript;
+            document.getElementById('aiFeedback').innerText = "AI가 문법과 비즈니스 표현(경어/겸양어)을 분석하고 있습니다...";
+            
+            getAiFeedback(currentPrompt, transcript, currentTargetLang);
+        };
+
+        recognition.onerror = function(event) {
+            resetMicButton();
+            alert("음성 인식 오류가 발생했습니다: " + event.error + "\n마이크 권한이 허용되어 있는지 확인해주세요.");
+        };
+    } else {
+        alert("현재 브라우저는 음성 인식 기능을 지원하지 않습니다. Safari 또는 Chrome을 이용해주세요.");
+    }
 
     function startRecognition() {
+        if (!recognition) return;
         recognition.lang = currentTargetLang; 
         recognition.start();
-        document.getElementById('micBtn').innerText = "듣고 있습니다...";
+        document.getElementById('micBtn').innerText = "듣고 있습니다... (말씀해주세요)";
         document.getElementById('micBtn').classList.add('recording');
     }
 
-    recognition.onresult = function(event) {
-        const transcript = event.results[0][0].transcript;
-        document.getElementById('micBtn').innerText = "🎤 통역하기 (마이크)";
+    function resetMicButton() {
+        document.getElementById('micBtn').innerText = "🎤 통역하기 (마이크 누르기)";
         document.getElementById('micBtn').classList.remove('recording');
-        
-        document.getElementById('feedbackArea').style.display = 'block';
-        document.getElementById('mySpeech').innerText = transcript;
-        document.getElementById('aiFeedback').innerText = "AI가 문법과 비즈니스 표현을 검토 중입니다...";
-        
-        getAiFeedback(currentPrompt, transcript, currentTargetLang);
-    };
+    }
 
-    recognition.onerror = function() {
-        document.getElementById('micBtn').innerText = "🎤 통역하기 (마이크)";
-        document.getElementById('micBtn').classList.remove('recording');
-        alert("음성 인식에 실패했습니다. 마이크 권한을 확인해주세요.");
-    };
-
-    // ========== 5. AI 피드백 연동 ==========
+    // ========== 5. AI 교정 API 연동 ==========
     async function getAiFeedback(original, translated, targetLang) {
-        if(API_KEY === '여기에_API_키를_입력하세요') {
-            document.getElementById('aiFeedback').innerText = "API 키가 입력되지 않았습니다. 코드에 API 키를 넣어주세요.";
+        const savedApiKey = localStorage.getItem('gemini_api_key');
+        
+        if(!savedApiKey) {
+            alert("상단의 API 키를 먼저 입력하고 저장해주세요.");
+            document.getElementById('apiKeySection').style.display = 'block';
             return;
         }
 
         const promptMessage = `
+        당신은 전문 통역 훈련 강사입니다.
         원본 문장: "${original}"
-        학생의 통역(${targetLang}): "${translated}"
-        위 통역을 평가해주세요. 
-        1. 의미가 정확히 전달되었는지
-        2. 비즈니스 상황(공식적인 교류)에 맞는 정중한 표현(경어/겸양어 등)이 사용되었는지
-        3. 더 자연스러운 모범 통역안 1개 제시
-        짧고 명확하게 피드백해주세요.
+        학생의 통역 결과(${targetLang}): "${translated}"
+        
+        아래 세 가지 항목에 대해 짧고 명확하게 피드백해주세요:
+        1. 의미 전달: 원본 문장의 핵심 의미가 누락 없이 잘 전달되었는가?
+        2. 비즈니스 예절: 공식적인 기관 교류 상황에 적합한 정중한 표현(경어, 겸양어 등 JLPT N1 수준의 비즈니스 매너)이 적절히 사용되었는가? 틀린 문법이 있다면 짚어주세요.
+        3. 모범 통역안: 가장 자연스럽고 전문적인 모범 통역 문장 1개를 제시해주세요.
         `;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${savedApiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: promptMessage }] }]
                 })
             });
+            
+            if (!response.ok) throw new Error('API 요청 실패');
+            
             const data = await response.json();
             const feedbackText = data.candidates[0].content.parts[0].text;
             document.getElementById('aiFeedback').innerHTML = feedbackText.replace(/\n/g, '<br>');
         } catch (error) {
-            document.getElementById('aiFeedback').innerText = "피드백을 불러오는 데 실패했습니다.";
+            document.getElementById('aiFeedback').innerText = "피드백을 불러오는 데 실패했습니다. API 키가 정확한지, 혹은 네트워크 상태를 확인해주세요.";
         }
     }
 
-    // 초기화
-    window.onload = loadScenario;
+    // 앱 실행 시 초기화
+    window.onload = function() {
+        checkApiKey();
+        loadScenario();
+    };
 </script>
 </body>
 </html>
